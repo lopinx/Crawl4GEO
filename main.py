@@ -54,8 +54,6 @@ from pypinyin import lazy_pinyin, Style
 """全局设置"""
 # 当前工作目录
 WorkDIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path.cwd()
-# 启动paddle模式。 0.40版之后开始支持，早期版本不支持
-jieba.enable_paddle()
 # 下载分词库数据（首次运行需要）
 try:
     nltk.corpus.stopwords.words()
@@ -216,8 +214,7 @@ class ArticleSpider():
             # 中文处理：TextRank + 词密度
             # 将用户词逐个添加到jieba词典（确保短语不被拆分）
             list(map(jieba.add_word, require_words))
-            # keywords = [word for word in jieba.cut(content) if word not in stop_words or word in require_words]
-            keywords = [word for word in pseg.cut(content,use_paddle=True) if word not in stop_words or word in require_words]
+            keywords = [word for word in jieba.cut(content) if word not in stop_words or word in require_words]
             vectorizer = TfidfVectorizer(ngram_range=(1, 6), token_pattern=r'[^\s]+')
             tfidf_matrix = vectorizer.fit_transform([' '.join(keywords)])
             vocab = vectorizer.vocabulary_  

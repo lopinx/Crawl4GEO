@@ -16,8 +16,6 @@
 
 ---
 
-# Crawl4GEO
-
 ## 项目概述
 
 `Crawl4GEO` 是一个用于从多个站点爬取文章并生成结构化数据的自动化脚本。该脚本支持多站点爬取，使用 `KeyBERT` 和 `TextRank`, `jiba` 等算法进行关键词提取，并支持将爬取的文章导出为 Markdown 格式，方便集成到各种内容管理系统（CMS/LLM）中。
@@ -33,7 +31,7 @@
 
 2. 使用 `uv` 添加依赖包：
    ```bash
-   uv add aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn jieba nltk toml lxml bs4 markdown markdownify pillow python-slugify pypinyin
+   uv add aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn paddlepaddle-tiny jieba nltk toml lxml bs4 markdown markdownify pillow python-slugify pypinyin
    ```
 
 3. 或者使用 `requirements.txt` 安装依赖：
