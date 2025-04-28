@@ -10,7 +10,7 @@ __author__ = "https://github.com/lopinx"
 # 安装依赖包： uv add markdownify ... ...
 # 安装依赖包： uv pip install -r requirements.txt
 # 导出依赖包： uv pip freeze | uv pip compile - -o requirements.txt
-# uv add aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn jieba nltk toml lxml bs4 markdown markdownify pillow python-slugify pypinyin
+# uv add aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn jieba nltk toml lxml bs4 markdown markdownify pillow python-slugify pypinyin rank_bm25
 # ======================================================================================================================
 # 关键词提取：Rake、Yake、Keybert 和 Textrank
 # 百度：Textrank + jieba
@@ -18,42 +18,47 @@ __author__ = "https://github.com/lopinx"
 # ======================================================================================================================
 import asyncio
 import hashlib
-import uuid
 import json
 import logging
 import mimetypes
 import os.path
 import re
 import sys
-from collections import Counter, OrderedDict
-from datetime import datetime, timezone, timedelta
+import uuid
+from collections import Counter, OrderedDict, defaultdict
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from itertools import product
 from pathlib import Path, PurePath
 from typing import Dict, List, Optional, Tuple, Union
-from urllib.parse import (unquote, urlencode, urljoin, urlparse, urlsplit, urlunsplit)
+from urllib.parse import (unquote, urljoin, urlparse)
 
-from keybert import KeyBERT
-from sklearn.feature_extraction.text import TfidfVectorizer
 import aiofiles
 import aiosqlite
-from httpx import AsyncClient, HTTPError, Response
 import jieba
 import jieba.analyse
-import jieba.posseg as pseg
+import markdown
 import nltk
+import numpy as np
 import tomlkit
 from bs4 import BeautifulSoup, NavigableString
-import markdown
+from httpx import AsyncClient, HTTPError, Response
+from keybert import KeyBERT
 from markdownify import markdownify
 from nltk.corpus import stopwords
+from nltk.tokenize import sent_tokenize, word_tokenize
+# from nltk.util import everygrams
 from PIL import Image
+from pypinyin import Style, lazy_pinyin
+from rank_bm25 import BM25Okapi
+from sklearn.feature_extraction.text import TfidfVectorizer
 from slugify import slugify
-from pypinyin import lazy_pinyin, Style
+
 # ======================================================================================================================
 """全局设置"""
 # 当前工作目录
 WorkDIR = Path(__file__).resolve().parent
+sites = json.load(open(WorkDIR/"config.json", 'r', encoding='utf-8'))
 # 下载分词库数据（首次运行需要）
 try:
     nltk.corpus.stopwords.words()
@@ -244,6 +249,42 @@ class ArticleSpider():
         return [k for k in t_k if len(k) >= 2 and not filter_pattern.fullmatch(k)]
         # ===============================================================================================================
 
+    # 提取元摘要
+    async def _extract_excerpt(self, content: str, length: int = 3) -> str:
+        # 先将markdown格式转换为纯文本格式
+        sentences = sent_tokenize(markdownify(content))
+        # 判断文本语言（中文/英文）
+        cn_lang = any(
+            (u'\u4e00' <= char <= u'\u9fa5') or
+            (u'\u3400' <= char <= u'\u4DBF') or
+            (u'\U00020000' <= char <= u'\U0002A6DF')
+            for char in content
+        )
+        # 分句处理
+        if not cn_lang:
+            sentences = sent_tokenize(content)
+            stop_words = set(stopwords.words('english')).union(en_stopk)
+        else:
+            sentences = [s.strip() for s in re.split(r'[。！？\.\!\?]\s*', content) if s.strip()]
+            stop_words = set(stopwords.words('chinese')).union(cn_stopk)
+        # 分词并去除停用词
+        _sents = []
+        for sent in sentences:
+            if not cn_lang:
+                tokens = [word for word in word_tokenize(sent.lower()) if word not in stop_words]
+            else:
+                tokens = [word for word in jieba.cut(sent) if word not in stop_words]
+            _sents.append(tokens)
+        # 计算 BM25
+        bm25 = BM25Okapi(_sents)
+        # 计算每个句子的得分
+        scores = []
+        for query in _sents:
+            scores.append(bm25.get_scores(query).mean())  # 使用平均得分
+        # 获取得分最高的句子索引并返回摘要
+        excerpt = ' '.join([sentences[i] for i in sorted(np.argsort(scores)[::-1][:length])])
+        return excerpt
+
     # 修复内容图片
     async def _fix_images(self, link: str, title: str, html: BeautifulSoup) -> Tuple[BeautifulSoup, List, List]:
         # 处理 <picture> 标签
@@ -365,7 +406,8 @@ class ArticleSpider():
                     _ft = _ps[0].get_text()
                     _excerpt = e if (len(e := (_ft or (_ps[1].get_text() if len(_ps) > 1 else ""))) > 60) else ""
                 else:
-                    _excerpt = ""
+                    _excerpt = await self._extract_excerpt(_html.text, 5)
+        
 
         # 提取文章标签
         if self.site["extract"]:
@@ -488,7 +530,6 @@ class ArticleSpider():
                 # 自动遍历寻找下页
                 next_link = soup.select_one(self.site['selectors']['list']['next'])
                 current = (next_link and urljoin(current, next_link['href'])) or None
-
         return links
 
     # 生成CMS文章
@@ -607,5 +648,4 @@ async def main(sites) -> None:
     await asyncio.gather(*[ArticleSpider(_).run() for _ in sites])
 
 if __name__ == "__main__":
-    sites = json.load(open(WorkDIR/"dev.json", 'r', encoding='utf-8'))
     asyncio.run(main(sites))
