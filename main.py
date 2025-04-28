@@ -53,7 +53,7 @@ from pypinyin import lazy_pinyin, Style
 # ======================================================================================================================
 """全局设置"""
 # 当前工作目录
-WorkDIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path.cwd()
+WorkDIR = Path(__file__).resolve().parent
 # 下载分词库数据（首次运行需要）
 try:
     nltk.corpus.stopwords.words()
