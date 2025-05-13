@@ -1,54 +1,26 @@
 [
     {
-        "name": "网站名称（辨识作用）",
+        "name": "蝙蝠侠IT（www.batmanit.com）",
         "start_urls": [
-            "https://www.xxxx.cn/yunying/newmedia",
-            "https://www.xxxx.cn/yunying/douyin",
-            "https://www.xxxx.cn/yunying/huodong",
-            "https://www.xxxx.cn/yunying/sqyy",
-            "https://www.xxxx.cn/yunying/user",
-            "https://www.xxxx.cn/yunying/zhibo",
-            "https://www.xxxx.cn/yunying/dianshang"
+            "https://www.batmanit.com/fl-1.html"
         ],
-        "amount": 10,
-        "imgprefix": "https://cdn.bbbb.cn/xxx/xxxx/",
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
-        "extract": true,
-        "watermark": {
-            "text": "©2014-2025 lopins.cn 版权所有",
-            "password": "©2014-2025 lopins.cn 版权所有"
-        },
-        "slugify": {
-            "stopwords": [],
-            "replacements": [],
-            "separator": "-"
-        },
-        "cms": "hugo",
-        "categories": [
-            ""
-        ],
-        "author": "lopinx",
         "selectors": {
             "list": {
-                "article": "ul.post-loop h3.item-title > a",
-                "next": "a[class=\"next\"]"
+                "article": "article.post > header > h2 > a",
+                "next": "nav.pagination > a:last-child"
             },
             "article": {
-                "title": "h1.entry-title",
-                "tags": "div.entry-tag",
-                "excerpt": "blockquote > p > span",
-                "content": "div.entry-content",
-                "date": "time.entry-date",
-                "extras": {
-                    "views": "div.entry-head > div > span:nth-child(7)",
-                    "likes": "div.info-item.meta > a > span",
-                    "zan": "div.entry-action > div > span"
-                }
+                "title": "h1.article-title",
+                "tags": "",
+                "excerpt": "",
+                "content": "article.article-content",
+                "date": "",
+                "extras": {} 
             },
             "remove": {
                 "tags": [
-                    "div#ez-toc-container",
-                    "div[class=\"entry-copyright\"]"
+                    "",
+                    ""
                 ],
                 "regex": [
                     "<script(.*?)><\\/script>",
@@ -60,6 +32,24 @@
                 "titles": [],
                 "words": []
             }
+        },
+        "cms": "hugo",
+        "categories": [
+            ""
+        ],
+        "author": "lopins",
+        "amount": 100,
+        "imgprefix": "https://cdn.lopins.cn/images",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        "extract": true,
+        "watermark": {
+            "text": "",
+            "password": ""
+        },
+        "slugify": {
+            "stopwords": [],
+            "replacements": [],
+            "separator": "-"
         },
         "tokenizer": {
             "filter": [],

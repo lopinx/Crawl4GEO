@@ -10,7 +10,7 @@ __author__ = "https://github.com/lopinx"
 # 安装依赖包： uv add markdownify ... ...
 # 安装依赖包： uv pip install -r requirements.txt
 # 导出依赖包： uv pip freeze | uv pip compile - -o requirements.txt
-# uv add aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn jieba nltk toml lxml bs4 markdown markdownify pillow python-slugify pypinyin rank_bm25
+# uv add aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn jieba nltk tomlkit lxml bs4 markdown markdownify pillow python-slugify pypinyin rank_bm25
 # ======================================================================================================================
 # 关键词提取：Rake、Yake、Keybert 和 Textrank
 # 百度：Textrank + jieba
@@ -21,11 +21,9 @@ import hashlib
 import json
 import logging
 import mimetypes
-import os.path
 import re
-import sys
 import uuid
-from collections import Counter, OrderedDict, defaultdict
+# from collections import Counter, OrderedDict, defaultdict
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from itertools import product
@@ -70,7 +68,10 @@ except LookupError:
     nltk.download('punkt')
     nltk.download('punkt_tab')
 # 远程 https://res.cdn.issem.cn/ChineseStopWords.txt, 并将内容转换为列表
-cn_stopk, en_stopk = [[*map(str.strip, filter(str.strip, (WorkDIR / f"{lang}StopWords.txt").open(encoding='utf-8')))] for lang in ('Chinese', 'English')]
+try:
+    cn_stopk, en_stopk = [[*map(str.strip, filter(str.strip, (WorkDIR / f"{lang}StopWords.txt").open(encoding='utf-8')))] for lang in ('Chinese', 'English')]
+except:
+    cn_stopk, en_stopk = [], []
 # ======================================================================================================================
 
 class ArticleSpider():
@@ -106,7 +107,7 @@ class ArticleSpider():
             CREATE TABLE IF NOT EXISTS articles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT UNIQUE NOT NULL,
-                title TEXT NOT NULL,
+                title TEXT,
                 tags TEXT,
                 excerpt TEXT,
                 content TEXT,
@@ -124,7 +125,7 @@ class ArticleSpider():
         _parses = urlparse(self.site['start_urls'][0])
         _pn = unquote(PurePath(urlparse(url).path.rstrip('/')).name) if filename else None
         _headers = {
-            'User-Agent': self.site.get('user_agent', "lopins.cn/0.1 Fetcher, support@lopins.cn"),
+            'User-Agent': self.site.get('user_agent', "bot.lopins.cn/0.1 Fetcher, support@lopins.cn"),
             'Host': _parses.netloc,
             'Accept': '*/*',
             'Content-Type': mimetypes.guess_type(_pn)[0] if filename else 'text/html',
@@ -252,7 +253,7 @@ class ArticleSpider():
     # 提取元摘要
     async def _extract_excerpt(self, content: str, length: int = 3) -> str:
         # 先将markdown格式转换为纯文本格式
-        sentences = sent_tokenize(markdownify(content))
+        content = sent_tokenize(markdownify(content))
         # 判断文本语言（中文/英文）
         cn_lang = any(
             (u'\u4e00' <= char <= u'\u9fa5') or
@@ -260,27 +261,23 @@ class ArticleSpider():
             (u'\U00020000' <= char <= u'\U0002A6DF')
             for char in content
         )
-        # 分句处理
+        # 分句处理(分词并去除停用词)
+        _sents = []
         if not cn_lang:
             sentences = sent_tokenize(content)
             stop_words = set(stopwords.words('english')).union(en_stopk)
+            for sent in sentences:
+                tokens = [w.lower() for w in word_tokenize(sent) if w.lower() not in stop_words]
         else:
-            sentences = [s.strip() for s in re.split(r'[。！？\.\!\?]\s*', content) if s.strip()]
+            sentences = [s.strip() for s in re.split(r'[。！？\.\!\?，；\u3000]', content) if s.strip()]
             stop_words = set(stopwords.words('chinese')).union(cn_stopk)
-        # 分词并去除停用词
-        _sents = []
-        for sent in sentences:
-            if not cn_lang:
-                tokens = [word for word in word_tokenize(sent.lower()) if word not in stop_words]
-            else:
-                tokens = [word for word in jieba.cut(sent) if word not in stop_words]
-            _sents.append(tokens)
+            for sent in sentences:
+                tokens = [w for w in jieba.cut(sent) if w not in stop_words]
+        _sents.append(tokens)
         # 计算 BM25
         bm25 = BM25Okapi(_sents)
         # 计算每个句子的得分
-        scores = []
-        for query in _sents:
-            scores.append(bm25.get_scores(query).mean())  # 使用平均得分
+        scores = [bm25.get_scores(tokens).mean() for tokens in _sents]
         # 获取得分最高的句子索引并返回摘要
         excerpt = ' '.join([sentences[i] for i in sorted(np.argsort(scores)[::-1][:length])])
         return excerpt
@@ -335,7 +332,7 @@ class ArticleSpider():
                 _realurl = await self._fetch_data(real_url, filename)
                 local.append(_realurl[1]) if _realurl[0] else None
                 # 替换内容URL
-                img_tag['data-original' if 'data-original' in img_tag.attrs else 'src'] = f"{self.site['imgprefix']}/{filename}"
+                img_tag['data-original' if 'data-original' in img_tag.attrs else 'src'] = f"{self.site.get('imgprefix', '/images')}/{filename}"
                 # 设置元数据
                 img_tag['alt'] = img_tag['title'] = title
             except Exception as e:
@@ -356,10 +353,11 @@ class ArticleSpider():
         try:
             _title = soup.select_one(self.site['selectors']['article']['title']).text.strip().lstrip("标题：")
             # 只保留需要的特定标题信息
-            if (tfs := self.site['selectors']['filter']['titles']) and any(_ in _title for _ in tfs):
-                return
-            if (sfw := self.site['selectors']['filter']['words']) and any(_ in _title for _ in sfw):
-                return
+            if self.site['selectors'].get('filter'):
+                if (tfs := self.site['selectors']['filter']['titles']) and any(_ in _title for _ in tfs):
+                    return
+                if (sfw := self.site['selectors']['filter']['words']) and any(_ in _title for _ in sfw):
+                    return
         except:
             return
 
@@ -368,30 +366,32 @@ class ArticleSpider():
         try:
             _html = soup.select_one(self.site['selectors']['article']['content'])
             # 过滤违禁信息
-            if (sfw := self.site['selectors']['filter']['words']) and any(_ in _html.text for _ in sfw):
-                return
+            if self.site['selectors'].get('filter'):
+                if (sfw := self.site['selectors']['filter']['words']) and any(_ in _html.text for _ in sfw):
+                    return
             desc_preg = r'^.*?【?(?:本文|文章|本篇|全文|前言)\s*[，,]?\s*(?:简介|摘要|概述|导读|描述)】?[：:]?'
             if (p := re.compile(desc_preg, re.DOTALL)) and (_p := _html.find(lambda _t: _t.text and p.match(_t.text))):
                 _p.string = re.sub(p, '', _p.text, 1)
         except:
             return
-        # 移除不需要的元素【指定选择器+正则匹配】
-        # 步骤1：移除符合指定选择器的页面元素
-        if srt := self.site['selectors']['remove']['tags']:
-            for selector in srt:
-                try:
-                    for element in _html.select(selector):
-                        element.decompose()
-                except Exception as e:
-                    pass
-        # 步骤2：移除符合正则表达式的文本内容
-        if srr := self.site['selectors']['remove']['regex']:
-            for pattern in srr:
-                try:
-                    for text in _html.find_all(string=lambda t: re.match(pattern, str(t))):
-                        text.extract()
-                except Exception as e:
-                    pass
+        if self.site['selectors'].get('remove'):
+            # 移除不需要的元素【指定选择器+正则匹配】
+            # 步骤1：移除符合指定选择器的页面元素
+            if srt := self.site['selectors']['remove']['tags']:
+                for selector in srt:
+                    try:
+                        for element in _html.select(selector):
+                            element.decompose()
+                    except Exception as e:
+                        pass
+            # 步骤2：移除符合正则表达式的文本内容
+            if srr := self.site['selectors']['remove']['regex']:
+                for pattern in srr:
+                    try:
+                        for text in _html.find_all(string=lambda t: re.match(pattern, str(t))):
+                            text.extract()
+                    except Exception as e:
+                        pass
         # =========================================================================================================
 
         # 提取文章摘要
@@ -410,7 +410,7 @@ class ArticleSpider():
         
 
         # 提取文章标签
-        if self.site["extract"]:
+        if self.site.get("extract"):
             _tags = await self._extract_keywords(_html.text, require_words)
         else:
             try:
@@ -457,10 +457,11 @@ class ArticleSpider():
             self.logger.error(f'{link}，获取图片失败，{str(e)}')
 
         # 增加版权信息
-        if t_mark := self.site['watermark']['text']:
-            _copyright = "".join(f"{ord(c):03d}\u200B" for c in t_mark)[:-1]
-            if (end_tag := _html.find_all(recursive=False)[-1] if _html.contents else None):
-                end_tag.insert_after(NavigableString(_copyright))
+        if self.site.get('watermark'):
+            if t_mark := self.site['watermark']['text']:
+                _copyright = "".join(f"{ord(c):03d}\u200B" for c in t_mark)[:-1]
+                if (end_tag := _html.find_all(recursive=False)[-1] if _html.contents else None):
+                    end_tag.insert_after(NavigableString(_copyright))
 
         # print(repr(_text))
         return {
@@ -494,28 +495,48 @@ class ArticleSpider():
         _ftag = await self._export_markdown({**data, 'url': url}),
         if _ftag:
             async with self.conn.cursor() as cursor:
-                await cursor.execute(
-                    "INSERT OR REPLACE INTO articles "
-                    "(url, title, tags, excerpt, content, date, extras, pictures, publish) "
-                    "VALUES (?, ?, json(?), ?, ?, ?, json(?), json(?), 1)",
-                    (
-                        url,
-                        data['title'],
-                        json.dumps(data['tags']),
-                        data['excerpt'],
-                        data['content'],
-                        data['date'],
-                        json.dumps(data['extras']),
-                        json.dumps(data['thumb']),
+                # await cursor.execute(
+                #     "INSERT OR REPLACE INTO articles "
+                #     "(url, title, tags, excerpt, content, date, extras, pictures, publish) "
+                #     "VALUES (?, ?, json(?), ?, ?, ?, json(?), json(?), 1)",
+                #     (
+                #         url,
+                #         data['title'],
+                #         json.dumps(data['tags']),
+                #         data['excerpt'],
+                #         data['content'],
+                #         data['date'],
+                #         json.dumps(data['extras']),
+                #         json.dumps(data['thumb']),
+                #     )
+                # )
+                await cursor.execute("SELECT url FROM articles WHERE url = ?", (url,))
+                existing = await cursor.fetchone()
+                if existing:
+                    await cursor.execute(
+                        """
+                        UPDATE articles 
+                        SET title = ?, tags = json(?), excerpt = ?, content = ?, date = ?, extras = json(?), pictures = json(?), publish = ? 
+                        WHERE url = ?
+                        """,
+                        (
+                            data['title'],
+                            json.dumps(data['tags']),
+                            data['excerpt'],
+                            data['content'],
+                            data['date'],
+                            json.dumps(data['extras']),
+                            json.dumps(data['thumb']),
+                            1,
+                            url
+                        )
                     )
-                )
                 await self.conn.commit()
         else:
             self.logger.info('No new articles found.')
 
     # 爬取文章列表
     async def _crawl_lists(self) -> List[str]:
-        links = []
         # 从起始页开启爬取
         for start in self.site['start_urls']:
             current = start
@@ -525,12 +546,19 @@ class ArticleSpider():
                     break
                 # 页面所有文章链接
                 soup = BeautifulSoup(html[1].text.strip(), 'lxml')
-                article = soup.select(self.site['selectors']['list']['article'])
-                links.extend([urljoin(current, a['href']) for a in article])
+                hrefs = soup.select(self.site['selectors']['list']['article'])
+                for a in hrefs:
+                    url = urljoin(current, a['href'])
+                    # 只保留链接字段，并根据url判断是否已存在
+                    async with self.conn.cursor() as cursor:
+                        await cursor.execute("SELECT url FROM articles WHERE url = ?", (url,))
+                        existing = await cursor.fetchone()
+                        if not existing:
+                            await cursor.execute("INSERT INTO articles (url) VALUES (?)", (url,))
+                            await self.conn.commit()
                 # 自动遍历寻找下页
                 next_link = soup.select_one(self.site['selectors']['list']['next'])
                 current = (next_link and urljoin(current, next_link['href'])) or None
-        return links
 
     # 生成CMS文章
     async def _export_markdown(self, data: Dict) -> Optional[bool]:
@@ -625,21 +653,19 @@ class ArticleSpider():
 
     async def run(self) -> None:
         await self._setup_db()
+        
+        # 获取新的文章链接列表
+        await asyncio.create_task(self._crawl_lists())
 
-        _list = asyncio.create_task(self._crawl_lists())
-        newurls = await _list  # 获取新的文章链接列表
-
-        semaphore = asyncio.Semaphore(self.site['amount'])
+        semaphore = asyncio.Semaphore(self.site.get("amount", 3))
         async def _limit_tasks(task):
             async with semaphore:
                 return await task
 
-        _exists = set()
         async with self.conn.cursor() as cursor:
-            await cursor.execute("SELECT url FROM articles WHERE publish=1")
-            _exists = {_[0] for _ in await cursor.fetchall()}
-
-        tasks = [_limit_tasks(self._process_article(_)) for _ in newurls if _ not in _exists]
+            await cursor.execute("SELECT url FROM articles WHERE publish != 1")
+            unhandle = {_[0] for _ in await cursor.fetchall()}
+        tasks = [_limit_tasks(self._process_article(_)) for _ in unhandle]
         await asyncio.gather(*tasks)
 
         await self.conn.close()

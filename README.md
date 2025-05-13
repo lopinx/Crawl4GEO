@@ -20,89 +20,81 @@
 
 `Crawl4GEO` 是一个用于从多个站点爬取文章并生成结构化数据的自动化脚本。该脚本支持多站点爬取，使用 `KeyBERT` 和 `TextRank`, `jiba` 等算法进行关键词提取，并支持将爬取的文章导出为 Markdown 格式，方便集成到各种内容管理系统（CMS/LLM）中。
 
-## 安装依赖
-
-### 使用 `uv` 工具安装依赖
-
-1. 安装 `uv` 工具（如果尚未安装）：
-   ```bash
-   pip install uv
-   ```
-
-2. 使用 `uv` 添加依赖包：
-   ```bash
-   uv add aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn paddlepaddle-tiny jieba nltk toml lxml bs4 markdown markdownify pillow python-slugify pypinyin
-   ```
-
-3. 或者使用 `requirements.txt` 安装依赖：
-   ```bash
-   uv pip install -r requirements.txt
-   ```
-
-4. 导出依赖包：
-   ```bash
-   uv pip freeze | uv pip compile - -o requirements.txt
-   ```
-
-### 手动安装依赖
-
-你也可以手动安装所有依赖包：
-```bash
-pip install aiofiles aiosqlite "httpx[http2,http3]" keybert scikit-learn jieba nltk toml lxml bs4 markdown markdownify pillow python-slugify pypinyin
-```
-
 ## 配置说明
 
 ### `config.json`
 
 `config.json` 文件包含爬虫的配置信息，包括站点信息、选择器、过滤规则等。以下是一个示例配置：
 
-```json
+``` json5
 [
     {
-        "start_urls": ["https://example.com/articles"],
-        "user_agent": "lopins.cn/0.1 Fetcher, support@lopins.cn",
+        "name": "蝙蝠侠IT（www.batmanit.com）",
+        "start_urls": [
+            "https://www.batmanit.com/fl-1.html"
+        ],
         "selectors": {
-            "article": {
-                "title": "h1.title",
-                "content": "div.content",
-                "excerpt": "meta[name='description']",
-                "tags": "meta[name='keywords']",
-                "date": "time.published-date",
-                "extras": {
-                    "author": "span.author"
-                }
-            },
             "list": {
-                "article": "a.article-link",
-                "next": "a.next-page"
+                "article": "article.post > header > h2 > a",
+                "next": "nav.pagination > a:last-child"
+            },
+            "article": {
+                "title": "h1.article-title",
+                "tags": "",
+                "excerpt": "",
+                "content": "article.article-content",
+                "date": "",
+                "extras": {} 
             },
             "remove": {
-                "tags": ["div.ads", "div.sidebar"],
-                "regex": ["广告", "赞助"]
+                "tags": [
+                    "",
+                    ""
+                ],
+                "regex": [
+                    "<script(.*?)><\\/script>",
+                    "<p>&nbsp;<\\/p>",
+                    "<p><br\\s*\\/?></p>"
+                ]
             },
             "filter": {
-                "titles": ["广告", "赞助"],
-                "words": ["广告", "赞助"]
+                "titles": [],
+                "words": []
             }
         },
-        "tokenizer": {
-            "require": ["关键词1", "关键词2"],
-            "filter": ["过滤词1", "过滤词2"]
-        },
-        "watermark": {
-            "text": "版权信息"
-        },
-        "slugify": {
-            "separator": "-",
-            "stopwords": ["的", "了", "是"],
-            "replacements": [["&", "and"]]
-        },
-        "categories": ["技术", "新闻"],
+        // 以下为非必须参数
+        // CMS类型
+        "cms": "hugo",
+        // 文章分类
+        "categories": [
+            ""
+        ],
+        // 文章作者
         "author": "lopins",
-        "cover": "https://example.com/cover.jpg",
-        "cms": "hexo",
-        "amount": 5
+        // 线程数量
+        "amount": 100,
+        // 图片前缀
+        "imgprefix": "https://cdn.lopins.cn/images",
+        // 爬虫UA
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        // 是否分词
+        "extract": true,
+        // 水印参数
+        "watermark": {
+            "text": "",
+            "password": ""
+        },
+        // 链接样式
+        "slugify": {
+            "stopwords": [],
+            "replacements": [],
+            "separator": "-"
+        },
+        // 分词语库
+        "tokenizer": {
+            "filter": [],
+            "require": []
+        }
     }
 ]
 ```
@@ -168,53 +160,76 @@ Crawl4GEO/
 
 ### Q: 如何添加新的站点？
 
-A: 编辑 `dev.json` 文件，添加新的站点配置。例如：
+A: 编辑 `config.json` 文件，添加新的站点配置。例如：
 
-```json
+``` json5
 {
-    "start_urls": ["https://newsite.com/articles"],
-    "user_agent": "lopins.cn/0.1 Fetcher, support@lopins.cn",
+    "name": "蝙蝠侠IT（www.batmanit.com）",
+    "start_urls": [
+        "https://www.batmanit.com/fl-1.html"
+    ],
     "selectors": {
-        "article": {
-            "title": "h1.title",
-            "content": "div.content",
-            "excerpt": "meta[name='description']",
-            "tags": "meta[name='keywords']",
-            "date": "time.published-date",
-            "extras": {
-                "author": "span.author"
-            }
-        },
         "list": {
-            "article": "a.article-link",
-            "next": "a.next-page"
+            "article": "article.post > header > h2 > a",
+            "next": "nav.pagination > a"
+        },
+        "article": {
+            "title": "h1.article-title",
+            "tags": "",
+            "excerpt": "",
+            "content": "article.article-content",
+            "date": "",
+            "extras": {} 
         },
         "remove": {
-            "tags": ["div.ads", "div.sidebar"],
-            "regex": ["广告", "赞助"]
+            "tags": [
+                "",
+                ""
+            ],
+            "regex": [
+                "<script(.*?)><\\/script>",
+                "<p>&nbsp;<\\/p>",
+                "<p><br\\s*\\/?></p>"
+            ]
         },
         "filter": {
-            "titles": ["广告", "赞助"],
-            "words": ["广告", "赞助"]
+            "titles": [],
+            "words": []
         }
     },
-    "tokenizer": {
-        "require": ["关键词1", "关键词2"],
-        "filter": ["过滤词1", "过滤词2"]
-    },
-    "watermark": {
-        "text": "版权信息"
-    },
-    "slugify": {
-        "separator": "-",
-        "stopwords": ["的", "了", "是"],
-        "replacements": [["&", "and"]]
-    },
-    "categories": ["技术", "新闻"],
+    // 以下为非必须参数
+    // CMS类型
+    "cms": "hugo",
+    // 文章分类
+    "categories": [
+        ""
+    ],
+    // 文章作者
     "author": "lopins",
-    "cover": "https://newsite.com/cover.jpg",
-    "cms": "hexo",
-    "amount": 5
+    // 线程数量
+    "amount": 100,
+    // 图片前缀
+    "imgprefix": "https://cdn.lopins.cn/images",
+    // 爬虫UA
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+    // 是否分词
+    "extract": true,
+    // 水印参数
+    "watermark": {
+        "text": "",
+        "password": ""
+    },
+    // 链接样式
+    "slugify": {
+        "stopwords": [],
+        "replacements": [],
+        "separator": "-"
+    },
+    // 分词语库
+    "tokenizer": {
+        "filter": [],
+        "require": []
+    }
 }
 ```
 
